@@ -114,7 +114,7 @@ if st.session_state.eligible:
                         "Content-Type": "application/json"
                     }
                     payload = {
-                        "model": "llama3-8b-8192",
+                        "model": "llama-3.1-8b-instant",
                         "messages": [
                             {"role": "system", "content": "You are a helpful lender advisor."},
                             {"role": "user", "content": prompt}
