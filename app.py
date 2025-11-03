@@ -3,37 +3,37 @@ import requests
 import json
 
 # -----------------------------
-# PAGE CONFIG
+# PAGE SETTINGS
 # -----------------------------
-st.set_page_config(page_title="Loan Prequalification (Groq-Powered)", page_icon="🏦", layout="centered")
+st.set_page_config(page_title="🏦 Loan Prequalification", page_icon="💰", layout="centered")
 
-st.title("🏦 Loan Prequalification Portal")
-st.caption("Enter borrower info → LLM analyzes eligibility based on loan guidelines.")
+st.title("🏦 Loan Prequalification Portal (AI-Powered)")
+st.caption("Enter borrower info → Groq LLM analyzes eligibility based on loan guidelines.")
 
 st.markdown(
     """
     ### 📘 Reference:
-    Guideline Source: [CakeTPO Products](https://caketpo.com/products)
-    *(AI uses these programs — Alternative Doc, DSCR, Closed-End Seconds — to assess eligibility.)*
+    Guideline Source: [CakeTPO Products](https://caketpo.com/products)  
+    *(AI references these programs — Alternative Doc, DSCR, Closed-End Seconds — for eligibility.)*
     """
 )
 
 st.divider()
 
 # -----------------------------
-# FORM INPUTS (Borrower Data)
+# FORM FOR BORROWER DATA
 # -----------------------------
 with st.form("borrower_form"):
     st.header("Core Profile")
     col1, col2 = st.columns(2)
     with col1:
         credit_score = st.number_input("Credit Score", min_value=0, max_value=900, value=720)
-        cob_credit = st.number_input("Co-borrower Credit Score (if applicable)", min_value=0, max_value=900, value=0)
+        cob_credit = st.number_input("Co-borrower Credit Score (if applicable)", min_value=0, max_value=900, value=650)
         zip_code = st.text_input("ZIP Code")
         state = st.text_input("State (e.g., CA, TX, FL)")
     with col2:
-        credit_hist = st.text_area("Credit History Summary (e.g., bankruptcies, late payments)")
-        cob_credit_hist = st.text_area("Co-borrower Credit History Summary")
+        credit_hist = st.text_area("Credit History Summary (bankruptcies, late payments, etc.)")
+        cob_credit_hist = st.text_area("Co-borrower Credit History Summary (if any)")
 
     st.header("Loan Details")
     col3, col4 = st.columns(2)
@@ -61,7 +61,7 @@ with st.form("borrower_form"):
     col7, col8 = st.columns(2)
     with col7:
         gross_income = st.number_input("Gross Monthly Income ($)", min_value=0, step=100, value=10000)
-        cob_income = st.number_input("Co-borrower Gross Monthly Income ($)", min_value=0, step=100, value=0)
+        cob_income = st.number_input("Co-borrower Gross Monthly Income ($)", min_value=0, step=100, value=3000)
     with col8:
         monthly_debt = st.number_input("Total Monthly Debt Obligations ($)", min_value=0, step=100, value=800)
         employment_type = st.selectbox("Employment Type", ["W-2", "Self-Employed", "Retired", "Other"])
@@ -70,23 +70,20 @@ with st.form("borrower_form"):
     closing_time = st.selectbox("Target Closing Timeframe", ["ASAP", "30 days", "45 days", "60 days"])
     liquid_assets = st.number_input("Available Liquid Assets ($)", min_value=0, step=1000, value=50000)
 
-    submitted = st.form_submit_button("Analyze with Groq")
+    submitted = st.form_submit_button("Analyze with Groq AI")
 
 # -----------------------------
-# WHEN FORM IS SUBMITTED
+# WHEN SUBMITTED → CALL GROQ
 # -----------------------------
 if submitted:
     st.divider()
     st.subheader("Processing borrower data with Groq AI...")
 
-    # Combine inputs into a single borrower profile
     borrower_data = {
         "credit_score": credit_score,
         "co_borrower_credit_score": cob_credit,
         "state": state,
         "zip_code": zip_code,
-        "credit_history": credit_hist,
-        "co_borrower_credit_history": cob_credit_hist,
         "loan_purpose": loan_purpose,
         "loan_amount_requested": loan_amount,
         "property_type": property_type,
@@ -105,27 +102,22 @@ if submitted:
         "closing_timeframe": closing_time,
     }
 
-    # -----------------------------
-    # GROQ MODEL PROMPT
-    # -----------------------------
     prompt = f"""
     You are an experienced mortgage underwriter.
-    Using the following borrower data, determine:
-    - Maximum eligible loan amount
-    - Estimated interest rate range
-    - Estimated monthly payment (PITI)
-    - Combined DTI ratio
-    - Likely program fit (Conventional / FHA / VA / NON-QM / DSCR)
-    - Pre-approval status: Pre-approved / Needs review / Not eligible
-    Reference loan guidelines from CakeTPO where applicable.
-
+    Based on the following borrower data, determine and respond ONLY in valid JSON format:
+    {{
+        "maximum_eligible_loan_amount": number,
+        "estimated_interest_rate_range": "string",
+        "estimated_monthly_payment_PITI": "string",
+        "estimated_combined_DTI_ratio": "string",
+        "likely_program_fit": "string",
+        "pre_approval_status": "string",
+        "summary": "short text explanation"
+    }}
     Borrower Data:
     {json.dumps(borrower_data, indent=2)}
     """
 
-    # -----------------------------
-    # CALL GROQ API
-    # -----------------------------
     try:
         headers = {
             "Authorization": f"Bearer {st.secrets['GROQ_API_KEY']}",
@@ -137,8 +129,8 @@ if submitted:
             json={
                 "model": "llama-3.1-8b-instant",
                 "messages": [
-                    {"role": "system", "content": "You are a helpful mortgage advisor."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": "You are a helpful mortgage advisor that returns strict JSON."},
+                    {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.2,
             },
@@ -147,9 +139,34 @@ if submitted:
 
         if response.status_code == 200:
             data = response.json()
-            ai_answer = data["choices"][0]["message"]["content"]
-            st.success("✅ AI Response:")
-            st.write(ai_answer)
+            ai_text = data["choices"][0]["message"]["content"].strip()
+
+            # Try to parse JSON safely
+            try:
+                result = json.loads(ai_text)
+            except Exception:
+                # fallback if model added extra text
+                start = ai_text.find("{")
+                end = ai_text.rfind("}") + 1
+                result = json.loads(ai_text[start:end]) if start >= 0 and end > start else {}
+
+            st.success("✅ AI Results")
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("💰 Max Loan", f"${result.get('maximum_eligible_loan_amount', 'N/A')}")
+                st.metric("📈 Rate Range", result.get("estimated_interest_rate_range", "N/A"))
+            with col2:
+                st.metric("🏡 Monthly Payment (PITI)", result.get("estimated_monthly_payment_PITI", "N/A"))
+                st.metric("📊 DTI Ratio", result.get("estimated_combined_DTI_ratio", "N/A"))
+            with col3:
+                st.metric("📋 Program Fit", result.get("likely_program_fit", "N/A"))
+                st.metric("✅ Status", result.get("pre_approval_status', 'N/A"))
+
+            st.divider()
+            st.subheader("🧠 Summary / Notes")
+            st.markdown(result.get("summary", "_No explanation returned._"))
+
         else:
             st.error(f"API Error {response.status_code}: {response.text}")
 
