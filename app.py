@@ -7,8 +7,8 @@ import json
 # -----------------------------
 st.set_page_config(page_title="Loan Prequalification (Groq-Powered)", page_icon="🏦", layout="centered")
 
-st.title("🏦 Loan Prequalification Portal (Groq AI)")
-st.caption("Enter borrower info → Groq LLM analyzes eligibility based on loan guidelines.")
+st.title("🏦 Loan Prequalification Portal")
+st.caption("Enter borrower info → LLM analyzes eligibility based on loan guidelines.")
 
 st.markdown(
     """
@@ -148,7 +148,7 @@ if submitted:
         if response.status_code == 200:
             data = response.json()
             ai_answer = data["choices"][0]["message"]["content"]
-            st.success("✅ Groq AI Response:")
+            st.success("✅ AI Response:")
             st.write(ai_answer)
         else:
             st.error(f"API Error {response.status_code}: {response.text}")
