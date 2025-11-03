@@ -1,109 +1,157 @@
 import streamlit as st
-import pandas as pd
 import requests
 import json
 
 # -----------------------------
-# PAGE SETTINGS
+# PAGE CONFIG
 # -----------------------------
-st.set_page_config(page_title="🏦 Lender Directory & AI Q&A", page_icon="💬", layout="wide")
-st.title("🏦 Lender Directory & AI Assistant")
-st.caption("Browse lender details, filter by criteria, and ask AI questions about any lender.")
+st.set_page_config(page_title="Loan Prequalification (Groq-Powered)", page_icon="🏦", layout="centered")
 
-# -----------------------------
-# LOAD CSV DATA
-# -----------------------------
-@st.cache_data
-def load_data():
-    df = pd.read_csv("lenders.csv")
-    # Clean up column names (remove extra spaces)
-    df.columns = [c.strip().replace("\n", " ") for c in df.columns]
-    return df
+st.title("🏦 Loan Prequalification Portal (Groq AI)")
+st.caption("Enter borrower info → Groq LLM analyzes eligibility based on loan guidelines.")
 
-try:
-    df = load_data()
-except FileNotFoundError:
-    st.error("❌ lenders.csv not found. Please upload it or place it in the same folder.")
-    st.stop()
+st.markdown(
+    """
+    ### 📘 Reference:
+    Guideline Source: [CakeTPO Products](https://caketpo.com/products)
+    *(AI uses these programs — Alternative Doc, DSCR, Closed-End Seconds — to assess eligibility.)*
+    """
+)
+
+st.divider()
 
 # -----------------------------
-# FILTER OPTIONS
+# FORM INPUTS (Borrower Data)
 # -----------------------------
-col1, col2, col3 = st.columns(3)
+with st.form("borrower_form"):
+    st.header("Core Profile")
+    col1, col2 = st.columns(2)
+    with col1:
+        credit_score = st.number_input("Credit Score", min_value=0, max_value=900, value=720)
+        cob_credit = st.number_input("Co-borrower Credit Score (if applicable)", min_value=0, max_value=900, value=0)
+        zip_code = st.text_input("ZIP Code")
+        state = st.text_input("State (e.g., CA, TX, FL)")
+    with col2:
+        credit_hist = st.text_area("Credit History Summary (e.g., bankruptcies, late payments)")
+        cob_credit_hist = st.text_area("Co-borrower Credit History Summary")
 
-with col1:
-    loan_type = st.selectbox("Filter by Loan Type", ["All"] + sorted(df["TYPE OF LOAN"].dropna().unique().tolist()))
-with col2:
-    state_filter = st.text_input("Filter by State or Niche (keywords like 'TX', 'state', etc.)")
-with col3:
-    search_name = st.text_input("Search Lender Name")
+    st.header("Loan Details")
+    col3, col4 = st.columns(2)
+    with col3:
+        loan_purpose = st.selectbox("Loan Purpose", ["Purchase", "Refinance"])
+        loan_amount = st.number_input("Loan Amount Requested ($)", min_value=0, step=1000, value=350000)
+        property_type = st.selectbox("Property Type", ["Single-Family", "Condo", "Multi-Unit", "Manufactured Home"])
+        occupancy_type = st.selectbox("Occupancy Type", ["Primary Residence", "Second Home", "Investment"])
+    with col4:
+        loan_program = st.selectbox("Loan Program Type", ["Conventional", "FHA", "VA", "USDA", "Jumbo", "NON-QM"])
+        loan_term = st.selectbox("Loan Term", ["30-Year Fixed", "15-Year Fixed", "ARM"])
+        est_rate = st.number_input("Estimated Interest Rate (%)", min_value=0.0, step=0.125, value=7.25, format="%.3f")
 
-filtered_df = df.copy()
+    st.header("Property Information")
+    col5, col6 = st.columns(2)
+    with col5:
+        property_value = st.number_input("Estimated Property Value ($)", min_value=0, step=1000, value=500000)
+        county = st.text_input("County (optional)")
+    with col6:
+        down_payment = st.number_input("Down Payment ($)", min_value=0, step=1000, value=100000)
+        dp_pct = (down_payment / property_value * 100) if property_value else 0
+        st.write(f"💰 **Down Payment %:** {dp_pct:.2f}%")
 
-if loan_type != "All":
-    filtered_df = filtered_df[filtered_df["TYPE OF LOAN"].str.contains(loan_type, case=False, na=False)]
+    st.header("Income & Liabilities")
+    col7, col8 = st.columns(2)
+    with col7:
+        gross_income = st.number_input("Gross Monthly Income ($)", min_value=0, step=100, value=10000)
+        cob_income = st.number_input("Co-borrower Gross Monthly Income ($)", min_value=0, step=100, value=0)
+    with col8:
+        monthly_debt = st.number_input("Total Monthly Debt Obligations ($)", min_value=0, step=100, value=800)
+        employment_type = st.selectbox("Employment Type", ["W-2", "Self-Employed", "Retired", "Other"])
 
-if state_filter:
-    filtered_df = filtered_df[
-        filtered_df["TOP NICHE"].astype(str).str.contains(state_filter, case=False, na=False)
-    ]
+    st.header("Timing & Financials")
+    closing_time = st.selectbox("Target Closing Timeframe", ["ASAP", "30 days", "45 days", "60 days"])
+    liquid_assets = st.number_input("Available Liquid Assets ($)", min_value=0, step=1000, value=50000)
 
-if search_name:
-    filtered_df = filtered_df[
-        filtered_df["LENDER"].astype(str).str.contains(search_name, case=False, na=False)
-    ]
-
-st.success(f"Showing {len(filtered_df)} matching lenders.")
+    submitted = st.form_submit_button("Analyze with Groq")
 
 # -----------------------------
-# DISPLAY RESULTS
+# WHEN FORM IS SUBMITTED
 # -----------------------------
-for _, row in filtered_df.iterrows():
-    with st.expander(f"🏦 {row['LENDER']}  —  {row.get('COMP', '')} COMP"):
-        st.write(f"**AE:** {row.get('AE FIRST', '')} {row.get('AE LAST', '')}")
-        st.write(f"**Email:** {row.get('EMAIL', '')}")
-        st.write(f"**Phone:** {row.get('CELL PHO', '')}")
-        st.write(f"**Loan Type:** {row.get('TYPE OF LOAN', '')}")
-        st.write(f"**UW Fee:** {row.get('UW FEE', '')}")
-        st.write(f"**Top Niche:** {row.get('TOP NICHI', '')}")
-        st.write(f"**Notes:** {row.get('Notes', '')}")
+if submitted:
+    st.divider()
+    st.subheader("Processing borrower data with Groq AI...")
 
-        st.divider()
-        st.write("💬 Ask a question about this lender:")
+    # Combine inputs into a single borrower profile
+    borrower_data = {
+        "credit_score": credit_score,
+        "co_borrower_credit_score": cob_credit,
+        "state": state,
+        "zip_code": zip_code,
+        "credit_history": credit_hist,
+        "co_borrower_credit_history": cob_credit_hist,
+        "loan_purpose": loan_purpose,
+        "loan_amount_requested": loan_amount,
+        "property_type": property_type,
+        "occupancy_type": occupancy_type,
+        "loan_program": loan_program,
+        "loan_term": loan_term,
+        "estimated_rate": est_rate,
+        "property_value": property_value,
+        "down_payment": down_payment,
+        "down_payment_percent": dp_pct,
+        "gross_monthly_income": gross_income,
+        "co_borrower_income": cob_income,
+        "monthly_debt": monthly_debt,
+        "employment_type": employment_type,
+        "liquid_assets": liquid_assets,
+        "closing_timeframe": closing_time,
+    }
 
-        question = st.text_input(f"Question about {row['LENDER']}", key=f"q_{row['LENDER']}")
-        ask_btn = st.button(f"Ask {row['LENDER']}", key=f"btn_{row['LENDER']}")
+    # -----------------------------
+    # GROQ MODEL PROMPT
+    # -----------------------------
+    prompt = f"""
+    You are an experienced mortgage underwriter.
+    Using the following borrower data, determine:
+    - Maximum eligible loan amount
+    - Estimated interest rate range
+    - Estimated monthly payment (PITI)
+    - Combined DTI ratio
+    - Likely program fit (Conventional / FHA / VA / NON-QM / DSCR)
+    - Pre-approval status: Pre-approved / Needs review / Not eligible
+    Reference loan guidelines from CakeTPO where applicable.
 
-        if ask_btn and question.strip():
-            with st.spinner("Thinking..."):
-                # Build prompt
-                lender_info = row.to_dict()
-                prompt = (
-                    f"You are a mortgage advisor assistant. Based on the following lender information:\n"
-                    f"{json.dumps(lender_info, indent=2)}\n\n"
-                    f"User question: {question}\n"
-                    f"Answer concisely and professionally."
-                )
+    Borrower Data:
+    {json.dumps(borrower_data, indent=2)}
+    """
 
-                # GROQ API CALL
-                API_KEY = st.secrets["GROQ_API_KEY"]
-                url = "https://api.groq.com/openai/v1/chat/completions"
-                headers = {
-                    "Authorization": f"Bearer {API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful mortgage lending assistant."},
-                        {"role": "user", "content": prompt}
-                    ]
-                }
+    # -----------------------------
+    # CALL GROQ API
+    # -----------------------------
+    try:
+        headers = {
+            "Authorization": f"Bearer {st.secrets['GROQ_API_KEY']}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": [
+                    {"role": "system", "content": "You are a helpful mortgage advisor."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2,
+            },
+            timeout=60,
+        )
 
-                response = requests.post(url, headers=headers, json=payload)
-                if response.status_code == 200:
-                    data = response.json()
-                    answer = data["choices"][0]["message"]["content"]
-                    st.info(answer)
-                else:
-                    st.error(f"⚠️ API Error {response.status_code}: {response.text}")
+        if response.status_code == 200:
+            data = response.json()
+            ai_answer = data["choices"][0]["message"]["content"]
+            st.success("✅ Groq AI Response:")
+            st.write(ai_answer)
+        else:
+            st.error(f"API Error {response.status_code}: {response.text}")
+
+    except Exception as e:
+        st.error(f"Error calling Groq API: {e}")
