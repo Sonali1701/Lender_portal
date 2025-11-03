@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import re
 
 # -----------------------------
 # PAGE SETTINGS
@@ -12,7 +13,7 @@ st.caption("Enter borrower info → Groq LLM analyzes eligibility based on loan 
 
 st.markdown(
     """
-    ### 📘 Reference:
+    ### 📘 Reference
     Guideline Source: [CakeTPO Products](https://caketpo.com/products)  
     *(AI references these programs — Alternative Doc, DSCR, Closed-End Seconds — for eligibility.)*
     """
@@ -104,15 +105,15 @@ if submitted:
 
     prompt = f"""
     You are an experienced mortgage underwriter.
-    Based on the following borrower data, determine and respond ONLY in valid JSON format:
+    Analyze the following borrower data and return ONLY a valid JSON object:
     {{
-        "maximum_eligible_loan_amount": number,
-        "estimated_interest_rate_range": "string",
-        "estimated_monthly_payment_PITI": "string",
-        "estimated_combined_DTI_ratio": "string",
-        "likely_program_fit": "string",
-        "pre_approval_status": "string",
-        "summary": "short text explanation"
+      "maximum_eligible_loan_amount": number,
+      "estimated_interest_rate_range": "string",
+      "estimated_monthly_payment_PITI": "string",
+      "estimated_combined_DTI_ratio": "string",
+      "likely_program_fit": "string",
+      "pre_approval_status": "Pre-approved / Needs Review / Not Eligible",
+      "summary": "short plain-English explanation (2 sentences max)"
     }}
     Borrower Data:
     {json.dumps(borrower_data, indent=2)}
@@ -123,13 +124,14 @@ if submitted:
             "Authorization": f"Bearer {st.secrets['GROQ_API_KEY']}",
             "Content-Type": "application/json",
         }
+
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers=headers,
             json={
                 "model": "llama-3.1-8b-instant",
                 "messages": [
-                    {"role": "system", "content": "You are a helpful mortgage advisor that returns strict JSON."},
+                    {"role": "system", "content": "You are a helpful mortgage advisor that always returns strict JSON."},
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.2,
@@ -141,31 +143,40 @@ if submitted:
             data = response.json()
             ai_text = data["choices"][0]["message"]["content"].strip()
 
-            # Try to parse JSON safely
+            # Attempt to extract clean JSON
             try:
                 result = json.loads(ai_text)
             except Exception:
-                # fallback if model added extra text
                 start = ai_text.find("{")
                 end = ai_text.rfind("}") + 1
                 result = json.loads(ai_text[start:end]) if start >= 0 and end > start else {}
 
+            # ------------- Display -------------
             st.success("✅ AI Results")
 
+            # Nicely formatted number helper
+            def fmt_money(val):
+                try:
+                    val = float(val)
+                    return f"${val:,.0f}"
+                except Exception:
+                    return str(val)
+
             col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("💰 Max Loan", f"${result.get('maximum_eligible_loan_amount', 'N/A')}")
-                st.metric("📈 Rate Range", result.get("estimated_interest_rate_range", "N/A"))
-            with col2:
-                st.metric("🏡 Monthly Payment (PITI)", result.get("estimated_monthly_payment_PITI", "N/A"))
-                st.metric("📊 DTI Ratio", result.get("estimated_combined_DTI_ratio", "N/A"))
-            with col3:
-                st.metric("📋 Program Fit", result.get("likely_program_fit", "N/A"))
-                st.metric("✅ Status", result.get("pre_approval_status', 'N/A"))
+            col1.metric("💰 Max Loan", fmt_money(result.get("maximum_eligible_loan_amount", "N/A")))
+            col1.metric("📈 Rate Range", result.get("estimated_interest_rate_range", "N/A"))
+
+            col2.metric("🏡 Monthly Payment (PITI)", result.get("estimated_monthly_payment_PITI", "N/A"))
+            col2.metric("📊 DTI Ratio", result.get("estimated_combined_DTI_ratio", "N/A"))
+
+            col3.metric("📋 Program Fit", result.get("likely_program_fit", "N/A"))
+            col3.metric("✅ Status", result.get("pre_approval_status", "N/A"))
 
             st.divider()
             st.subheader("🧠 Summary / Notes")
-            st.markdown(result.get("summary", "_No explanation returned._"))
+            summary = result.get("summary", "")
+            summary_clean = re.sub(r'([,\.])(?=\S)', r'\1 ', summary)
+            st.markdown(summary_clean or "_No explanation provided._")
 
         else:
             st.error(f"API Error {response.status_code}: {response.text}")
